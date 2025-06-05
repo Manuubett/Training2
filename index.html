@@ -201,176 +201,172 @@
       addGame(); // Load at least one manually
       loadRecords();
     };
-  </script><!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Virtual Records Table – Access Control</title>
+  </script>
   <style>
-    #myModal {
-      display: none; position: fixed; z-index: 1; padding-top: 120px;
-      left: 0; top: 0; width: 100%; height: 100%;
-      overflow: auto; background: rgba(0, 0, 0, 0.4);
-    }
-    .modal-content {
-      background: #fff; margin: auto; padding: 20px;
-      border-radius: 10px; width: 90%; max-width: 400px;
-    }
-    button {
-      padding: 10px 20px; margin-top: 10px;
-      cursor: pointer; border: none; border-radius: 5px;
-    }
-    #verifyBtn { background: #007bff; color: #fff; }
-  </style>
-</head>
-<body>
+  #overlayBlocker {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255,255,255,0.9);
+    z-index: 1050;
+    display: none;
+    justify-content: center;
+    align-items: center;
+  }
+</style>
 
-<!-- Modal -->
-<div id="myModal">
-  <div class="modal-content">
-    <p style="font-size:14px;color:#333">
-      This small fee helps us keep the system running, verified, and secure for everyone 🙏
-    </p>
-    <h2>Verify M-Pesa Message</h2>
-    <p><strong>Please pay <span style="color:green">Ksh 35</span> to Till 
-      <strong style="color:green">4585402</strong> before submitting your message.</strong>
-    </p>
-    <textarea id="mpesaMessage" rows="6" style="width:100%" placeholder="Paste M-Pesa message here…"></textarea>
-    <button id="verifyBtn" onclick="verifyMessage()">Verify</button>
-    <p id="status"></p>
+<div id="overlayBlocker">
+  <div class="modal show d-block" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Submit Verification Message (Ksh 35)</h5>
+        </div>
+        <div class="modal-body">
+          <form id="messageForm">
+            <div class="mb-3">
+              <label for="messageInput" class="form-label">Your Message</label>
+              <textarea class="form-control" id="messageInput" required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Submit & Pay</button>
+            <p class="text-muted mt-2">You will be charged Ksh 35 for this verification request.</p>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
 
-<!-- Firebase SDKs -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyDukaltO2J2G-R-HSR7J6CL1yo0_TUja7o",
+    authDomain: "training-b61c4.firebaseapp.com",
+    projectId: "training-b61c4",
+    storageBucket: "training-b61c4.appspot.com",
+    messagingSenderId: "318739852647",
+    appId: "1:318739852647:web:62b5d6e44417f0c66a53c2",
+    measurementId: "G-WFKC7D219M"
+  };
 
-<script>
-/* ---------- Firebase ---------- */
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyDukaltO2J2G-R-HSR7J6CL1yo0_TUja7o",
-      authDomain: "training-b61c4.firebaseapp.com",
-      projectId: "training-b61c4",
-      storageBucket: "training-b61c4.firebasestorage.app",
-      messagingSenderId: "318739852647",
-      appId: "1:318739852647:web:62b5d6e44417f0c66a53c2",
-      measurementId: "G-WFKC7D219M"
-    };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+  const overlay = document.getElementById("overlayBlocker");
+  let verifyInterval = null;
 
-/* ---------- Timing constants ---------- */
-const FREE_PERIOD_MS   =  0* 60 * 60 * 1000;  // 4 hours free
-const ACCESS_PERIOD_MS = 0 * 60 * 60 * 1000;  // 7 hours per payment
+  function showOverlay() {
+    overlay.style.display = "flex";
+  }
 
-/* ---------- Elements ---------- */
-const modal     = document.getElementById('myModal');
-const statusEl  = document.getElementById('status');
-const verifyBtn = document.getElementById('verifyBtn');
+  function hideOverlay() {
+    overlay.style.display = "none";
+  }
 
-/* ---------- On page load ---------- */
-window.onload = () => {
-  const now           = Date.now();
-  const verifiedUntil = parseInt(localStorage.getItem('verified_until') || 0);
-  const freeStarted   = parseInt(localStorage.getItem('free_started') || 0);
+  function setExpiration(minutes = 300) {
+  const expiresAt = Date.now() + minutes * 60 * 1000;
+  localStorage.setItem("subscriptionExpiresAt", expiresAt);
+}
 
-  let showModal = false;
+  function setGracePeriod(minutes = 300) {
+  const graceEnd = Date.now() + minutes * 60 * 1000;
+  localStorage.setItem("gracePeriodExpiresAt", graceEnd);
+}
 
-  if (verifiedUntil && now > verifiedUntil) {
-    // Paid period expired
-    showModal = true;
-  } else if (!verifiedUntil) {
-    // Still in free mode
-    if (!freeStarted) {
-      localStorage.setItem('free_started', now);
-    } else if (now > freeStarted + FREE_PERIOD_MS) {
-      // Free period expired
-      showModal = true;
+  function recheckAccess() {
+    const savedId = localStorage.getItem("submittedDocId");
+    const expiresAt = parseInt(localStorage.getItem("subscriptionExpiresAt") || "0");
+    const graceEnd = parseInt(localStorage.getItem("gracePeriodExpiresAt") || "0");
+    const now = Date.now();
+
+    if (savedId) {
+      showOverlay();
+      startVerificationCheck(savedId);
+    } else if (expiresAt && now < expiresAt) {
+      hideOverlay();
+    } else if (graceEnd && now < graceEnd) {
+      hideOverlay();
+    } else if (!graceEnd) {
+      setGracePeriod();
+      hideOverlay();
+    } else {
+      showOverlay();
     }
   }
 
-  if (showModal) modal.style.display = 'block';
-};
-
-/* ---------- M-Pesa Verification ---------- */
-function verifyMessage() {
-  const message = document.getElementById('mpesaMessage').value.trim();
-  if (!message) {
-    statusEl.textContent = '❌ Please paste a message.';
-    return;
-  }
-
-  verifyBtn.disabled = true;
-  statusEl.textContent = '🔍 Validating…';
-
-  const regex = /^([A-Z0-9]{10}) Confirmed\. Ksh(\d+(\.\d{1,2})?) (sent|paid) to/i;
-  const match = message.match(regex);
-
-  if (!match) {
-    statusEl.textContent = '❌ Invalid M-Pesa message.';
-    verifyBtn.disabled = false;
-    return;
-  }
-
-  const [, mpesaCode, amountStr] = match;
-  if (parseFloat(amountStr) !== 35) {
-    statusEl.textContent = '❌ Amount must be Ksh 35.';
-    verifyBtn.disabled = false;
-    return;
-  }
-
-  db.collection('mpesa_verifications')
-    .where('code', '==', mpesaCode)
-    .get()
-    .then(snapshot => {
-      if (!snapshot.empty) {
-        statusEl.textContent = '❌ Code already used.';
-        verifyBtn.disabled = false;
-        return;
+  async function checkVerification(id) {
+    try {
+      const docSnap = await getDoc(doc(db, "mpesa_verifications", id));
+      if (docSnap.exists() && docSnap.data().verified) {
+        clearInterval(verifyInterval);
+        localStorage.removeItem("submittedDocId");
+        setExpiration(300); // 5 hours
+        hideOverlay();
       }
+    } catch (err) {
+      console.error("Verification check error:", err);
+    }
+  }
 
-      // Submit for approval
-      db.collection('mpesa_verifications').add({
+  function startVerificationCheck(id) {
+    verifyInterval = setInterval(() => checkVerification(id), 5000);
+  }
+
+
+  document.getElementById("messageForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const message = document.getElementById("messageInput").value.trim();
+    if (!message) return alert("Message is required.");
+
+    try {
+      const docRef = await addDoc(collection(db, "mpesa_verifications"), {
         message,
-        code: mpesaCode,
-        amount: 35,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        verified: false
-      }).then(docRef => {
-        statusEl.textContent = '✅ Submitted. Awaiting admin approval.';
-        document.getElementById('mpesaMessage').value = '';
-
-        // Listen for admin approval
-        const stop = db.collection('mpesa_verifications').doc(docRef.id)
-          .onSnapshot(doc => {
-            if (doc.exists && doc.data().verified) {
-              statusEl.textContent = '✅ Verified!';
-              localStorage.setItem('verified_until', Date.now() + ACCESS_PERIOD_MS);
-              localStorage.removeItem('free_started'); // reset free timer
-              setTimeout(() => {
-                modal.style.display = 'none';
-                verifyBtn.disabled = false;
-                statusEl.textContent = '';
-                stop();
-              }, 1500);
-            }
-          });
-
-        // Optional: open WhatsApp
-        window.open(`https://wa.me/25470451830?text=${encodeURIComponent(message)}`, '_blank');
-      }).catch(err => {
-        console.error(err);
-        statusEl.textContent = '❌ Failed. Try again.';
-        verifyBtn.disabled = false;
+        verified: false,
+        timestamp: serverTimestamp()
       });
-    });
-}
-</script>
-</body>
-</html>
 
-</html>
+      const docId = docRef.id;
+      localStorage.setItem("submittedDocId", docId);
+      startVerificationCheck(docId);
+
+      alert("Message submitted. Awaiting admin verification.");
+
+      const waMessage = encodeURIComponent(`New verification request:\n\n${message}`);
+      window.open(`https://wa.me/254704518130?text=${waMessage}`, "_blank");
+
+      // ⏱️ Immediately recheck overlay visibility
+      recheckAccess();
+    } catch (err) {
+      console.error(err);
+      alert("Submission failed.");
+    }
+  });
+
+
+ 
+window.addEventListener("DOMContentLoaded", () => {
+  const savedId = localStorage.getItem("submittedDocId");
+  const expiresAt = parseInt(localStorage.getItem("subscriptionExpiresAt") || "0");
+  const graceEnd = parseInt(localStorage.getItem("gracePeriodExpiresAt") || "0");
+  const now = Date.now();
+
+  if (savedId) {
+    showOverlay(); // Waiting for admin approval
+    startVerificationCheck(savedId);
+  } else if (expiresAt && now < expiresAt) {
+    hideOverlay(); // Already verified
+  } else if (graceEnd && now < graceEnd) {
+    hideOverlay(); // Grace period still active
+  } else if (!graceEnd) {
+    setGracePeriod(300); // Start free grace time
+    hideOverlay();
+  } else {
+    showOverlay(); // Grace expired, block user
+  }
+});
+</script>
 </body>
   </html>
