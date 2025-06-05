@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Odds Manager - Manual Game Input</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body class="bg-light p-4">
+  <div class="container">
+    <h2 class="mb-4">Enter Odds for Multiple Games</h2>
+
+    <div id="gamesContainer" class="row mb-3"></div>
+
+    <div class="mb-3">
+      <button class="btn btn-success" onclick="addGame()">+ Add Game</button>
+      <button class="btn btn-primary ms-2" onclick="submitAllGames()">Submit All Games</button>
+      <button class="btn btn-outline-secondary btn-sm ms-2" onclick="clearInputs()">Clear Inputs Now</button>
+    </div>
+
+    <p id="timeoutMsg" class="text-danger fw-bold mt-2"></p>
+
+    <div class="mb-3 mt-4">
+      <input
+        type="text"
+        id="searchInput"
+        class="form-control"
+        placeholder="Search Home, Draw, or Away Odds"
+        oninput="filterTable()"
+      />
+    </div>
+
+    <h4 class="mt-4">Saved Records</h4>
+    <div class="table-responsive">
+      <table class="table table-striped table-bordered" id="recordsTable">
+        <thead class="table-dark">
+          <tr>
+            <th>Game</th>
+            <th>Home</th>
+            <th>Draw</th>
+            <th>Away</th>
+            <th>Result</th>
+            <th>Timestamp</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let gameCount = 0;
+
+    function addGame(game = {}) {
+      gameCount++;
+      const container = document.getElementById("gamesContainer");
+
+      const col = document.createElement("div");
+      col.className = "col-md-4";
+      col.innerHTML = `
+        <div class="card p-3 mb-3">
+          <h5>Game ${gameCount}</h5>
+          <input type="text" class="form-control mb-2" id="game${gameCount}" placeholder="Game Name" value="${game.name || ''}" />
+          <input type="number" class="form-control mb-2" id="home${gameCount}" placeholder="Home Odds" step="any" value="${game.home || ''}" />
+          <input type="number" class="form-control mb-2" id="draw${gameCount}" placeholder="Draw Odds" step="any" value="${game.draw || ''}" />
+          <input type="number" class="form-control mb-2" id="away${gameCount}" placeholder="Away Odds" step="any" value="${game.away || ''}" />
+          <button type="button" class="btn btn-danger btn-sm mt-2 remove-game-btn">Remove</button>
+        </div>
+      `;
+
+      col.querySelector(".remove-game-btn").addEventListener("click", () => {
+        col.remove();
+      });
+
+      container.appendChild(col);
+    }
+
+    function generateKey(name, home, draw, away) {
+      return `odds_${name}_${home}_${draw}_${away}`;
+    }
+
+    function saveOdds(gameNumber, name, home, draw, away) {
+      const key = generateKey(name, home, draw, away);
+      const now = new Date().toLocaleString();
+
+      if (localStorage.getItem(key)) {
+        alert(`Game ${gameNumber}: Already exists`);
+      } else {
+        const result = prompt(`Game ${gameNumber} - Enter result (Home, Draw, Away):`);
+        if (!result) return;
+
+        const data = { game: name, result, timestamp: now, home, draw, away };
+        localStorage.setItem(key, JSON.stringify(data));
+      }
+    }
+
+    function submitAllGames() {
+      let submitted = false;
+      for (let i = 1; i <= gameCount; i++) {
+        const nameElem = document.getElementById(`game${i}`);
+        const homeElem = document.getElementById(`home${i}`);
+        const drawElem = document.getElementById(`draw${i}`);
+        const awayElem = document.getElementById(`away${i}`);
+
+        const name = nameElem ? nameElem.value.trim() : "";
+        const home = homeElem ? homeElem.value.trim() : "";
+        const draw = drawElem ? drawElem.value.trim() : "";
+        const away = awayElem ? awayElem.value.trim() : "";
+
+        if (name && home && draw && away) {
+          saveOdds(i, name, home, draw, away);
+          submitted = true;
+        }
+      }
+
+      if (submitted) {
+        loadRecords();
+        document.getElementById("timeoutMsg").textContent = "Submitted successfully!";
+      } else {
+        document.getElementById("timeoutMsg").textContent = "Please fill all fields for at least one game.";
+      }
+    }
+
+    function clearInputs() {
+      for (let i = 1; i <= gameCount; i++) {
+        const gameElem = document.getElementById(`game${i}`);
+        const homeElem = document.getElementById(`home${i}`);
+        const drawElem = document.getElementById(`draw${i}`);
+        const awayElem = document.getElementById(`away${i}`);
+
+        if (gameElem) gameElem.value = "";
+        if (homeElem) homeElem.value = "";
+        if (drawElem) drawElem.value = "";
+        if (awayElem) awayElem.value = "";
+      }
+      document.getElementById("timeoutMsg").textContent = "Inputs cleared.";
+    }
+
+    function loadRecords() {
+      const tbody = document.querySelector("#recordsTable tbody");
+      tbody.innerHTML = "";
+
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith("odds_")) {
+          const record = JSON.parse(localStorage.getItem(key));
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${record.game}</td>
+            <td>${record.home}</td>
+            <td>${record.draw}</td>
+            <td>${record.away}</td>
+            <td>${record.result}</td>
+            <td>${record.timestamp}</td>
+            <td>
+              <button class="btn btn-sm btn-warning me-2" onclick="editRecord('${key}')">Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteRecord('${key}')">Delete</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+      });
+    }
+
+    function editRecord(key) {
+      const record = JSON.parse(localStorage.getItem(key));
+      const result = prompt("Edit result:", record.result);
+      if (result) {
+        record.result = result;
+        record.timestamp = new Date().toLocaleString();
+        localStorage.setItem(key, JSON.stringify(record));
+        loadRecords();
+      }
+    }
+
+    function deleteRecord(key) {
+      if (confirm("Delete this record?")) {
+        localStorage.removeItem(key);
+        loadRecords();
+      }
+    }
+
+    function filterTable() {
+      const search = document.getElementById("searchInput").value.toLowerCase();
+      const rows = document.querySelectorAll("#recordsTable tbody tr");
+
+      rows.forEach((row) => {
+        const home = row.children[1].textContent.toLowerCase();
+        const draw = row.children[2].textContent.toLowerCase();
+        const away = row.children[3].textContent.toLowerCase();
+
+        if (home.includes(search) || draw.includes(search) || away.includes(search)) {
+          row.style.display = "";
+        } else {
+          row.style.display = "none";
+        }
+      });
+    }
+
+    window.onload = () => {
+      addGame(); // Load at least one manually
+      loadRecords();
+    };
+  </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Virtual Records Table – Access Control</title>
+  <style>
+    #myModal {
+      display: none; position: fixed; z-index: 1; padding-top: 120px;
+      left: 0; top: 0; width: 100%; height: 100%;
+      overflow: auto; background: rgba(0, 0, 0, 0.4);
+    }
+    .modal-content {
+      background: #fff; margin: auto; padding: 20px;
+      border-radius: 10px; width: 90%; max-width: 400px;
+    }
+    button {
+      padding: 10px 20px; margin-top: 10px;
+      cursor: pointer; border: none; border-radius: 5px;
+    }
+    #verifyBtn { background: #007bff; color: #fff; }
+  </style>
+</head>
+<body>
+
+<!-- Modal -->
+<div id="myModal">
+  <div class="modal-content">
+    <p style="font-size:14px;color:#333">
+      This small fee helps us keep the system running, verified, and secure for everyone 🙏
+    </p>
+    <h2>Verify M-Pesa Message</h2>
+    <p><strong>Please pay <span style="color:green">Ksh 35</span> to Till 
+      <strong style="color:green">4585402</strong> before submitting your message.</strong>
+    </p>
+    <textarea id="mpesaMessage" rows="6" style="width:100%" placeholder="Paste M-Pesa message here…"></textarea>
+    <button id="verifyBtn" onclick="verifyMessage()">Verify</button>
+    <p id="status"></p>
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<script>
+/* ---------- Firebase ---------- */
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDukaltO2J2G-R-HSR7J6CL1yo0_TUja7o",
+      authDomain: "training-b61c4.firebaseapp.com",
+      projectId: "training-b61c4",
+      storageBucket: "training-b61c4.firebasestorage.app",
+      messagingSenderId: "318739852647",
+      appId: "1:318739852647:web:62b5d6e44417f0c66a53c2",
+      measurementId: "G-WFKC7D219M"
+    };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* ---------- Timing constants ---------- */
+const FREE_PERIOD_MS   =  0* 60 * 60 * 1000;  // 4 hours free
+const ACCESS_PERIOD_MS = 7 * 60 * 60 * 1000;  // 7 hours per payment
+
+/* ---------- Elements ---------- */
+const modal     = document.getElementById('myModal');
+const statusEl  = document.getElementById('status');
+const verifyBtn = document.getElementById('verifyBtn');
+
+/* ---------- On page load ---------- */
+window.onload = () => {
+  const now           = Date.now();
+  const verifiedUntil = parseInt(localStorage.getItem('verified_until') || 0);
+  const freeStarted   = parseInt(localStorage.getItem('free_started') || 0);
+
+  let showModal = false;
+
+  if (verifiedUntil && now > verifiedUntil) {
+    // Paid period expired
+    showModal = true;
+  } else if (!verifiedUntil) {
+    // Still in free mode
+    if (!freeStarted) {
+      localStorage.setItem('free_started', now);
+    } else if (now > freeStarted + FREE_PERIOD_MS) {
+      // Free period expired
+      showModal = true;
+    }
+  }
+
+  if (showModal) modal.style.display = 'block';
+};
+
+/* ---------- M-Pesa Verification ---------- */
+function verifyMessage() {
+  const message = document.getElementById('mpesaMessage').value.trim();
+  if (!message) {
+    statusEl.textContent = '❌ Please paste a message.';
+    return;
+  }
+
+  verifyBtn.disabled = true;
+  statusEl.textContent = '🔍 Validating…';
+
+  const regex = /^([A-Z0-9]{10}) Confirmed\. Ksh(\d+(\.\d{1,2})?) (sent|paid) to/i;
+  const match = message.match(regex);
+
+  if (!match) {
+    statusEl.textContent = '❌ Invalid M-Pesa message.';
+    verifyBtn.disabled = false;
+    return;
+  }
+
+  const [, mpesaCode, amountStr] = match;
+  if (parseFloat(amountStr) !== 35) {
+    statusEl.textContent = '❌ Amount must be Ksh 35.';
+    verifyBtn.disabled = false;
+    return;
+  }
+
+  db.collection('mpesa_verifications')
+    .where('code', '==', mpesaCode)
+    .get()
+    .then(snapshot => {
+      if (!snapshot.empty) {
+        statusEl.textContent = '❌ Code already used.';
+        verifyBtn.disabled = false;
+        return;
+      }
+
+      // Submit for approval
+      db.collection('mpesa_verifications').add({
+        message,
+        code: mpesaCode,
+        amount: 35,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        verified: false
+      }).then(docRef => {
+        statusEl.textContent = '✅ Submitted. Awaiting admin approval.';
+        document.getElementById('mpesaMessage').value = '';
+
+        // Listen for admin approval
+        const stop = db.collection('mpesa_verifications').doc(docRef.id)
+          .onSnapshot(doc => {
+            if (doc.exists && doc.data().verified) {
+              statusEl.textContent = '✅ Verified!';
+              localStorage.setItem('verified_until', Date.now() + ACCESS_PERIOD_MS);
+              localStorage.removeItem('free_started'); // reset free timer
+              setTimeout(() => {
+                modal.style.display = 'none';
+                verifyBtn.disabled = false;
+                statusEl.textContent = '';
+                stop();
+              }, 1500);
+            }
+          });
+
+        // Optional: open WhatsApp
+        window.open(`https://wa.me/25470451830?text=${encodeURIComponent(message)}`, '_blank');
+      }).catch(err => {
+        console.error(err);
+        statusEl.textContent = '❌ Failed. Try again.';
+        verifyBtn.disabled = false;
+      });
+    });
+}
+</script>
+</body>
+</html>
+
+</html>
+</body>
+  </html>
